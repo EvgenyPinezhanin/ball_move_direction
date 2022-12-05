@@ -1,4 +1,5 @@
 #include <vector>
+#include <iostream>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -8,85 +9,53 @@
 using namespace std;
 using namespace cv;
 
-/* void calc_radius(vector<float> &radii, const vector<vector<Point>> &contours) {
-    Point2f center;
-    float radius;
-
-    radii.clear();
-
-    for (int i = 0; i < contours.size(); i++) {
-        minEnclosingCircle(contours[i], center, radius);
-        radii.push_back(radius);
-    }
-} */
-
-/* void avg_rad_disp(float &avg_rad, float &disp, const vector<float> &radii) {
-    avg_rad = 0.f;
-    for (int i = 0; i < radii.size(); i++) {
-        avg_rad += radii[i];
-    }
-    avg_rad /= radii.size();
-    
-    disp = 0.f;
-    for (int i = 0; i < radii.size(); i++) {
-        disp += (avg_rad - radii[i]) * (avg_rad - radii[i]);
-    }
-    disp /= radii.size();
-} */
+const int corners_row = 5;
+const int corners_column = 7;
 
 int main(int argc, char** argv) {
     String image_path = samples::findFile("resource/src_balls.jpg");
     Mat dst, src = imread(image_path, IMREAD_COLOR);
-    // vector<vector<Point>> contours;
-    // vector<Vec4i> hierarchy;
+    vector<Point2f> corners;
 
     namedWindow("The direction of the ball movement", WINDOW_NORMAL | WINDOW_KEEPRATIO | WINDOW_GUI_EXPANDED);
     resizeWindow("The direction of the ball movement", 700, 700 * src.rows / src.cols);
 
-/*     // Бинаризация изображения
+    // Поиск, калибрвка и отрисовка шахматной доски
+    if (!findChessboardCorners(src, Size(7, 5), corners)) {
+        return -1;
+    }
     cvtColor(src, dst, COLOR_BGR2GRAY);
-    equalizeHist(dst, dst);
-    threshold(dst, dst, 245, 255, THRESH_BINARY);
+    cornerSubPix(dst, corners, Size(10, 10), Size(-1, -1), TermCriteria(TermCriteria::COUNT, 100, 0.01));
+    drawChessboardCorners(src, Size(corners_row, corners_column), corners, true);
 
-    // Удаление шума
-    Mat kernel_nose = getStructuringElement(MORPH_CROSS, Size(3, 3));
-    erode(dst, dst, kernel_nose, Point(-1, -1), 3);
+    // Калибровка камеры
+    vector<vector<Point3f>> object_points; // Трехмерные координаты угловых точек на калибровочной доске
+    vector<vector<Point2f>> image_points; // Двумерные координаты угловых точек на калибровочной доске
+    Mat camera_matrix(3, 3, CV_32FC1, Scalar::all(0)); // Матрица параметров в камере
+    Mat dist_coeffs(1, 5, CV_32FC1, Scalar::all(0)); // 5 коэффициентов искажения камеры: k1, k2, p1, p2, k3
+    vector<Mat> tvecs; // Вектор вращения изображения
+    vector<Mat> rvecs; // Вектор перевода для изображения
 
-    // Заливка "пустот" в шарах
-    findContours(dst, contours, hierarchy, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
-    for (int i = 0; i < contours.size(); i++) {
-        if (hierarchy[i][3] >=0) {
-            fillPoly(dst, contours[i], 255, 1);
+    vector<Point3f> obj_p;
+    for(int i = 0; i < corners_row; i++) {
+        for(int j = 0; j < corners_column; j++) {
+            obj_p.push_back(Point3f(i, j, 0));
         }
     }
+    object_points.push_back(obj_p);
+    image_points.push_back(corners);
 
-    // "Разлипание" шаров
-    Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(3, 3));
-    erode(dst, dst, kernel, Point(-1, -1), 10);
-    dilate(dst, dst, kernel, Point(-1, -1), 10);
+    calibrateCamera(object_points, image_points, Size(src.rows, src.cols), camera_matrix, dist_coeffs, rvecs, tvecs);
 
-    // Поиск контуров шаров
-    findContours(dst, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
-    drawContours(src, contours, -1, (0, 0, 255), 3);
+    // Преобразование изображения
+    Mat rmat;
+    undistort(src, dst, camera_matrix, dist_coeffs); // Исправление искривлений камеры
 
-    // Вычисление среднего радиуса и дисперсии этой величины
-    vector<float> radii;
-    float avg_rad, disp;
-    calc_radius(radii, contours);
-    avg_rad_disp(avg_rad, disp, radii);
-    
-    // Вывод итоговых результатов
-    string number_ball = "Number of balls : ";
-    number_ball +=  to_string(contours.size());
-    string rad = "Average radius: ";
-    rad += to_string(avg_rad);
-    string d = "Variance: ";
-    d += to_string(disp);
-    putText(src, number_ball, Point(100,100), 1, 6, (255,255,255), 5);
-    putText(src, rad, Point(100,200), 1, 6, (255,255,255), 5);
-    putText(src, d, Point(100,300), 1, 6, (255,255,255), 5); */
+    // Не работает
+    // Rodrigues(rvecs[0], rmat); // поворот изображения
+    // warpPerspective(dst, dst, rmat, Size(dst.rows, dst.cols));
 
-    imshow("The direction of the ball movement", src);
+    imshow("The direction of the ball movement", dst);
 
     waitKey(0);
     return 0;
